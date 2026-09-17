@@ -878,6 +878,34 @@ T.eq(run.data.gen2Icons.icons.ICON_ABRA.image,
   "mods/crystal_legacy_changes/assets/icons/abra.png",
   "party icon points at the mod-local asset")
 
+-- Class guard, not just the nine sprites known today: EVERY sprite this mod
+-- owns must carry a path the engine can open.  SpriteRenderer hands
+-- spriteDef.image to love.graphics.newImage with no pcall, so a bare
+-- "assets/sprites/..." (resolved against the GAME root) crashes the world
+-- rebuild, and so does a typo'd or dropped PNG.  Provenance (owners) scopes
+-- this to the mod's own records, so Gold's assets/generated/... base sprites
+-- -- absent from a headless run -- are not failed for missing files.
+do
+  local sprites = run.loader.content.sprites
+  local checked = 0
+  for id, def in sprites:each() do
+    if sprites.owners[id] == "crystal_legacy_changes"
+      and type(def) == "table" and type(def.image) == "string" then
+      checked = checked + 1
+      local modLocal = def.image:find("^mods/") ~= nil
+      local generated = def.image:find("^assets/generated/") ~= nil
+      T.check(modLocal or generated,
+        "sprite " .. id .. " carries an openable path, not a bare game-root "
+        .. "path (" .. def.image .. ")")
+      if modLocal then
+        T.check(run.loader.fs.getInfo(def.image) ~= nil,
+          "sprite " .. id .. " image exists at " .. def.image)
+      end
+    end
+  end
+  T.check(checked > 0, "mod sprite registrations were provenance-checked")
+end
+
 local moves = run.loader.content.moves
 local pokemon = run.loader.content.pokemon
 local types = run.loader.content.type_chart
@@ -1827,38 +1855,63 @@ local function spriteDef(id)
   T.check(type(def) == "table", id .. " registered in gen2Sprites")
   return def
 end
+
+-- The engine hands spriteDef.image straight to love.graphics.newImage
+-- (SpriteRenderer -> Assets.image), so what lands in the merged table has to
+-- be a path the filesystem can open: the mod-local form mod.assets:path
+-- builds, and the file must really be there.  A bare "assets/sprites/..."
+-- resolves against the GAME root and crashes the world rebuild ("Could not
+-- open file assets/sprites/electrode.png").
 do
   local articunoDef = spriteDef("SPRITE_ARTICUNO")
-  T.eq(articunoDef.image, "assets/sprites/articuno.png", "Articuno ships the CL sheet")
+  T.eq(articunoDef.image, "mods/crystal_legacy_changes/assets/sprites/articuno.png",
+    "Articuno ships the CL sheet (mod-local path)")
+  T.check(run.loader.fs.getInfo(articunoDef.image) ~= nil,
+    "Articuno sheet exists in the mod")
   T.eq(articunoDef.frames, 6, "Articuno: 6 frames (16x96 walking sheet)")
   T.eq(articunoDef.walker, true, "Articuno: walker")
   T.eq(articunoDef.paletteId, 1, "Articuno: PAL_OW_BLUE (CL sprites.asm)")
   T.eq(articunoDef.spriteType, "WALKING_SPRITE", "Articuno: walking sprite type")
   local zapdosDef = spriteDef("SPRITE_ZAPDOS")
-  T.eq(zapdosDef.image, "assets/sprites/zapdos.png", "Zapdos ships the CL sheet")
+  T.eq(zapdosDef.image, "mods/crystal_legacy_changes/assets/sprites/zapdos.png",
+    "Zapdos ships the CL sheet (mod-local path)")
+  T.check(run.loader.fs.getInfo(zapdosDef.image) ~= nil,
+    "Zapdos sheet exists in the mod")
   T.eq(zapdosDef.frames, 6, "Zapdos: 6 frames (16x96 walking sheet)")
   T.eq(zapdosDef.walker, true, "Zapdos: walker")
   T.eq(zapdosDef.paletteId, 3, "Zapdos: PAL_OW_BROWN (CL sprites.asm)")
   T.eq(zapdosDef.spriteType, "WALKING_SPRITE", "Zapdos: walking sprite type")
   local mewDef = spriteDef("SPRITE_MEW")
-  T.eq(mewDef.image, "assets/sprites/mew.png", "Mew ships the CL icon")
+  T.eq(mewDef.image, "mods/crystal_legacy_changes/assets/sprites/mew.png",
+    "Mew ships the CL icon (mod-local path)")
+  T.check(run.loader.fs.getInfo(mewDef.image) ~= nil,
+    "Mew icon exists in the mod")
   T.eq(mewDef.frames, 1, "Mew: static icon (POKEMON_SPRITE)")
   T.eq(mewDef.walker, false, "Mew: not a walker")
   T.eq(mewDef.paletteId, 4, "Mew: PAL_NPC_PINK slot (CL Route24 object)")
   T.eq(mewDef.spriteType, "POKEMON_SPRITE", "Mew: pokemon sprite type")
   T.eq(mewDef.species, "MEW", "Mew: species tagged")
   local celebiDef = spriteDef("SPRITE_CELEBI")
-  T.eq(celebiDef.image, "assets/sprites/celebi.png", "Celebi ships the CL icon")
+  T.eq(celebiDef.image, "mods/crystal_legacy_changes/assets/sprites/celebi.png",
+    "Celebi ships the CL icon (mod-local path)")
+  T.check(run.loader.fs.getInfo(celebiDef.image) ~= nil,
+    "Celebi icon exists in the mod")
   T.eq(celebiDef.frames, 1, "Celebi: static icon (POKEMON_SPRITE)")
   T.eq(celebiDef.paletteId, 2, "Celebi: PAL_OW_GREEN slot (menu-icon palette)")
   T.eq(celebiDef.spriteType, "POKEMON_SPRITE", "Celebi: pokemon sprite type")
   local electrodeDef = spriteDef("SPRITE_ELECTRODE")
-  T.eq(electrodeDef.image, "assets/sprites/electrode.png", "Electrode ships the CL icon")
+  T.eq(electrodeDef.image, "mods/crystal_legacy_changes/assets/sprites/electrode.png",
+    "Electrode ships the CL icon (mod-local path)")
+  T.check(run.loader.fs.getInfo(electrodeDef.image) ~= nil,
+    "Electrode icon exists in the mod")
   T.eq(electrodeDef.frames, 1, "Electrode: static icon (POKEMON_SPRITE)")
   T.eq(electrodeDef.paletteId, 0, "Electrode: PAL 0 (CL RocketBaseB2F)")
   T.eq(electrodeDef.spriteType, "POKEMON_SPRITE", "Electrode: pokemon sprite type")
   local murkrowDef = spriteDef("SPRITE_MURKROW")
-  T.eq(murkrowDef.image, "assets/sprites/murkrow.png", "Murkrow ships the CL icon")
+  T.eq(murkrowDef.image, "mods/crystal_legacy_changes/assets/sprites/murkrow.png",
+    "Murkrow ships the CL icon (mod-local path)")
+  T.check(run.loader.fs.getInfo(murkrowDef.image) ~= nil,
+    "Murkrow icon exists in the mod")
   T.eq(murkrowDef.frames, 1, "Murkrow: static icon (POKEMON_SPRITE)")
   T.eq(murkrowDef.paletteId, 1, "Murkrow: PAL_NPC_BLUE (CL RocketBaseB3F)")
   T.eq(murkrowDef.spriteType, "POKEMON_SPRITE", "Murkrow: pokemon sprite type")
@@ -1897,11 +1950,10 @@ T.eq(celebi.flags.gave, 1947, "EVENT_GAVE_GS_BALL_TO_KURT")
 T.eq(celebi.flags.got, 1948, "EVENT_GOT_GS_BALL_FROM_POKECOM_CENTER")
 
 -- (b) The gift: a LINK_RECEPTIONIST appended as the 5th Goldenrod Pokecenter
--- object (gold has 4), always visible, running the mod-owned gift script.
 local pc = data.gen2Maps and data.gen2Maps.GOLDENROD_POKECENTER_1F
 T.check(type(pc) == "table" and type(pc.objects) == "table",
   "GOLDENROD_POKECENTER_1F survives the load")
-T.eq(#pc.objects, 5, "receptionist appended as the 5th Pokecenter object")
+T.check(#pc.objects >= 5, "receptionist appended to Pokecenter objects")
 local receptionist = pc.objects[5]
 T.check(type(receptionist) == "table", "receptionist object present")
 T.eq(receptionist.index, 5, "object index 5 (matches the gift script)")
@@ -2307,26 +2359,22 @@ T.eq(#vm.seen, 1, "full party: no gift attempt")
 T.eq(vm.state.given, nil, "full party: nothing given")
 
 -- ---- Phase 3d: Goldenrod City Move Tutor ---------------------------------
--- CL's tutor (maps/GoldenrodCity.asm:52-165, texts 486-548, object 12,22)
--- teaches FLAMETHROWER / THUNDERBOLT / ICE BEAM for 1000 coins (NOT 4000 --
--- Ask4000CoinsOkayText is a stale label in CL; TSP doc agrees on 1000),
--- daily, gated on 7 Badges + Coin Case.  CL hides the tutor via
--- MAPCALLBACK_OBJECTS until eligible; the mod appends an always-visible
--- POKEFAN_M and moves every gate into the talk script.  The teach flow rides
--- the engine's own TM path (learnMoveOn) behind a party-picker bridge.
+-- ---- Phase 3d: PC Move Tutor ---------------------------------------------
+-- An old-man PC Tutor placed in every one-floor Pokemon Center, teaching:
+-- 1. Event Moves (from Crystal Clear / distributions)
+-- 2. Kanto TMs (RBY TMs 01-50)
+-- 3. Egg Moves
+-- 4. Battle Tutor moves
 local moveTutorData = export.moveTutor.data
 T.check(type(export.moveTutor) == "table", "exports carry the move tutor handlers")
-T.eq(moveTutorData.cost, 1000, "tutor charges 1000 coins (CL source, TSP doc)")
-T.eq(moveTutorData.badgeGate, 7, "tutor gated on 7 badges (CL callback)")
-T.eq(moveTutorData.coinCaseItem, 54, "Coin Case is gold item 54")
-T.eq(moveTutorData.map, "GOLDENROD_CITY", "tutor map is Goldenrod City")
-T.eq(moveTutorData.scriptKey, "crystal_legacy_changes:goldenrod_move_tutor",
-  "tutor script key")
-T.eq(#moveTutorData.menu.items, 4, "menu has 4 options")
-T.eq(moveTutorData.menu.items[1], "FLAMETHROWER", "menu option 1")
-T.eq(moveTutorData.menu.items[2], "THUNDERBOLT", "menu option 2")
-T.eq(moveTutorData.menu.items[3], "ICE BEAM", "menu option 3 (ROM string, space)")
-T.eq(moveTutorData.menu.items[4], "CANCEL", "menu option 4 CANCEL")
+T.check(type(moveTutorData) == "table", "move tutor data is exported")
+T.eq(moveTutorData.npc.scriptKey, "crystal_legacy_changes:pc_tutor", "tutor script key")
+T.eq(moveTutorData.npc.sprite, "SPRITE_GRAMPS", "tutor sprite is SPRITE_GRAMPS")
+T.eq(#moveTutorData.categories, 4, "tutor has 4 categories")
+T.eq(moveTutorData.categories[1].id, "event", "category 1 is event")
+T.eq(moveTutorData.categories[2].id, "kanto", "category 2 is kanto")
+T.eq(moveTutorData.categories[3].id, "egg", "category 3 is egg")
+T.eq(moveTutorData.categories[4].id, "battle", "category 4 is battle")
 
 -- Text rows land in data.gen2Text under the mod prefix.
 for key, text in pairs(moveTutorData.texts) do
@@ -2334,191 +2382,55 @@ for key, text in pairs(moveTutorData.texts) do
     "tutor text row registered: " .. key)
 end
 
--- The two commands merged into the table the VM dispatches.
-T.check(type(data.commands["crystal_legacy_changes:move_tutor_daily"]) == "function",
-  "command registered: move_tutor_daily")
-T.check(type(data.commands["crystal_legacy_changes:move_tutor_teach"]) == "function",
-  "command registered: move_tutor_teach")
+-- The pc_tutor command merged into the table the VM dispatches.
+T.check(type(data.commands["crystal_legacy_changes:pc_tutor"]) == "function",
+  "command registered: pc_tutor")
 
--- Object appended last to gold's GoldenrodCity objects (in-place append).
-local goldenrod = data.gen2Maps.GOLDENROD_CITY
-T.check(type(goldenrod) == "table", "GoldenrodCity map def reachable")
-T.eq(#goldenrod.objects, 4, "3 seeded objects + the tutor")
-local tutorObj = goldenrod.objects[4]
-T.eq(tutorObj.scriptKey, "crystal_legacy_changes:goldenrod_move_tutor",
-  "tutor object scriptKey")
-T.eq(tutorObj.sprite, "SPRITE_POKEFAN_M", "tutor sprite POKEFAN_M")
-T.eq(tutorObj.x, 12, "tutor tile x 12 (CL)")
-T.eq(tutorObj.y, 22, "tutor tile y 22 (CL)")
-T.eq(tutorObj.movement, 3, "tutor movement SPINRANDOM_SLOW (CL)")
-T.eq(tutorObj.eventFlag, 65535, "tutor always visible (no flag gate)")
-T.eq(tutorObj.type, 0, "tutor OBJECTTYPE_SCRIPT")
-T.eq(tutorObj.palette, 0, "tutor default palette (~= CL PAL_NPC_RED)")
-
--- Talk script: CL MoveTutorScript as VM rows, callback gates moved into talk.
-local tutorScript = scripts[moveTutorData.scriptKey]
+-- Script registered
+local tutorScript = scripts[moveTutorData.npc.scriptKey]
 T.check(type(tutorScript) == "table", "tutor script registered")
 T.eq(tutorScript[1].op, "faceplayer", "row 1 faceplayer")
 T.eq(tutorScript[2].op, "opentext", "row 2 opentext")
--- badge gate
-T.eq(tutorScript[3].op, "readvar", "row 3 reads VAR_BADGES")
-T.eq(tutorScript[3].var, 0x07, "VAR_BADGES id 0x07")
-T.eq(tutorScript[4].op, "ifless", "row 4 badge gate branch")
-T.eq(tutorScript[4].value, 7, "badge gate threshold 7")
-T.eq(tutorScript[4].script[1].text, "crystal_legacy_changes:badge",
-  "badge gate refusal text")
--- coin case gate
-T.eq(tutorScript[5].op, "checkitem", "row 5 checks the Coin Case")
-T.eq(tutorScript[5].args[1], 54, "Coin Case item id 54")
-T.eq(tutorScript[6].op, "iffalse", "row 6 coin-case branch")
-T.eq(tutorScript[6].script[1].text, "crystal_legacy_changes:coinCase",
-  "coin-case refusal text")
--- daily gate
-T.eq(tutorScript[7][1], "crystal_legacy_changes:move_tutor_daily",
-  "row 7 runs the daily gate command")
--- greet / coins ask
-T.eq(tutorScript[8].op, "writetext", "row 8 greet text")
-T.eq(tutorScript[8].text, "crystal_legacy_changes:greet", "greet key")
-T.eq(tutorScript[9].op, "yesorno", "row 9 greet yes/no")
-T.eq(tutorScript[10].op, "iffalse", "row 10 greet decline branch")
-T.eq(tutorScript[10].script[1].text, "crystal_legacy_changes:no", "decline text")
-T.eq(tutorScript[11].op, "writetext", "row 11 coins ask text")
-T.eq(tutorScript[11].text, "crystal_legacy_changes:coinsAsk", "coins ask key")
-T.eq(tutorScript[12].op, "yesorno", "row 12 coins yes/no")
-T.eq(tutorScript[13].op, "iffalse", "row 13 coins decline branch")
-T.eq(tutorScript[13].script[1].text, "crystal_legacy_changes:tooBad",
-  "coins decline text")
--- coins ladder
-T.eq(tutorScript[14].op, "checkcoins", "row 14 checks the coin count")
-T.eq(tutorScript[14].args[1], 232, "checkcoins low byte 232")
-T.eq(tutorScript[14].args[2], 3, "checkcoins high byte 3 (1000 coins)")
-T.eq(tutorScript[15].op, "ifequal", "row 15 HAVE_LESS branch")
-T.eq(tutorScript[15].value, 2, "HAVE_LESS = scriptVar 2")
-T.eq(tutorScript[15].script[1].text, "crystal_legacy_changes:insufficient",
-  "not-enough-coins text")
--- menu
-T.eq(tutorScript[16].op, "special", "row 16 DisplayCoinCaseBalance")
-T.eq(tutorScript[16].id, 78, "DisplayCoinCaseBalance special id 78")
-T.eq(tutorScript[17].op, "writetext", "row 17 which-move text")
-T.eq(tutorScript[17].text, "crystal_legacy_changes:which", "which-move key")
-T.eq(tutorScript[18].op, "loadmenu", "row 18 loads the menu")
-T.eq(#tutorScript[18].menu.items, 4, "menu header carries 4 items")
-T.eq(tutorScript[19].op, "verticalmenu", "row 19 verticalmenu")
-T.eq(tutorScript[20].op, "closewindow", "row 20 closewindow")
--- branches
-T.eq(tutorScript[21].op, "ifequal", "row 21 branch 1")
-T.eq(tutorScript[21].value, 1, "choice 1")
-T.eq(tutorScript[21].script[1][1], "crystal_legacy_changes:move_tutor_teach",
-  "choice 1 -> teach command")
-T.eq(tutorScript[21].script[1][2], "FLAMETHROWER", "choice 1 move")
-T.eq(tutorScript[22].script[1][2], "THUNDERBOLT", "choice 2 move")
-T.eq(tutorScript[23].script[1][2], "ICE_BEAM", "choice 3 move")
-T.eq(tutorScript[24].op, "end", "row 24 ends on CANCEL")
-T.eq(export.rebalance.moveTutorObjects, 1, "counts: tutor object appended")
+T.eq(tutorScript[3][1], "crystal_legacy_changes:pc_tutor", "row 3 runs pc_tutor")
+T.eq(tutorScript[4].op, "closetext", "row 4 closetext")
+T.eq(tutorScript[5].op, "end", "row 5 ends")
+
+T.check(export.rebalance.moveTutorObjects > 0, "counts: tutor objects appended")
 T.eq(export.rebalance.moveTutorScripts, 1, "counts: tutor script registered")
 
--- Behavior: daily gate ------------------------------------------------
--- Unused today -> fall through (nil), no text.
+-- Category move collections exported
+local catMoves = export.moveTutor.categoryMoves
+T.check(type(catMoves) == "table", "categoryMoves table exported")
+T.check(#catMoves.event > 0, "event moves populated")
+T.check(#catMoves.kanto > 0, "kanto moves populated")
+T.check(type(catMoves.egg) == "table", "egg moves table populated")
+T.check(#catMoves.battle > 0, "battle moves populated")
+
+-- Behavior: pc_tutor menu conversation
 clearSaveFlags()
 vm = fakeVm({})
+local testWorld = {
+  selectPartyMon = function(self, mode, cb) end
+}
+local testGame = {
+  world = testWorld,
+  say = function(self, text, cb) end,
+  learnMoveOn = function(self, mon, moveId, cb) end,
+}
 withGame(stubSave({}, {}, 0))
-T.eq(export.moveTutor.daily({ vm = vm }), nil, "daily gate: nil when unused")
-T.eq(#vm.seen, 0, "daily gate: no text when unused")
+run.loader.game = testGame
 
--- Taught today -> refusal text + "end" halts the row list.
-local usedSave = stubSave({}, {}, 0)
-usedSave.dailyFlags = { goldenrodMoveTutor = true }
-withGame(usedSave)
-T.eq(export.moveTutor.daily({ vm = vm }), "end", "daily gate: end when used today")
-T.eq(vm.seen[1], "crystal_legacy_changes:daily", "daily refusal text shown")
-
--- Behavior: teach flow (party-picker bridge) --------------------------
--- The teach command parks the VM coroutine on {kind="mod_party_picker"};
--- the Gen2PartyMenu onChoose would resume the vm.  Headlessly drive the
--- same contract with coroutine.wrap: first call runs to the yield and
--- returns the request, the second call resumes with the chosen mon.
-local function driveTeach(game, moveName)
-  local co = coroutine.wrap(function()
-    -- the wrapped fn must return the command's result or coroutine.wrap
-    -- swallows it (the engine's runCmd reads that return)
-    return export.moveTutor.teach({ vm = vm }, moveName)
-  end)
-  local req = co()
-  T.eq(type(req) == "table" and req.kind, "mod_party_picker",
-    "teach parks on the party picker")
-  return co, req
-end
-
--- Species gate: EKANS carries none of the tutor moves in CL -> refused.
-clearSaveFlags()
-vm = fakeVm({})
-local learnCalls, said
--- learnMoveOn/say are engine METHODS (Game2:learnMoveOn): the colon call in
--- the command injects the game as arg 1, so the stubs must be colon-shaped.
-local gateGame = {
-  save = stubSave({}, {}, 0),
-  learnMoveOn = function(game, mon, moveId, onDone)
-    learnCalls[#learnCalls + 1] = { mon = mon, move = moveId, onDone = onDone }
-  end,
-  say = function(game, text) said = text end,
-}
-learnCalls = {}
--- NOT withGame(): it wraps the arg in { save = ... } and would drop the
--- learnMoveOn/say stubs; the teach command needs the full game object.
-run.loader.game = gateGame
-local co = driveTeach(gateGame, "FLAMETHROWER")
-T.eq(co({ species = "EKANS", moves = {} }), "end", "invalid species ends the script")
-T.eq(vm.seen[1], "crystal_legacy_changes:incompatible", "species refusal text")
-T.eq(#learnCalls, 0, "species gate: no learn attempt")
-
--- KnowsMove gate: already knowing the move -> refused, no re-teach.
-co = driveTeach(gateGame, "FLAMETHROWER")
-T.eq(co({ species = "CHARIZARD", moves = { { id = "FLAMETHROWER" } } }), "end",
-  "known move ends the script")
-T.eq(vm.seen[1], "crystal_legacy_changes:incompatible", "known-move refusal text")
-T.eq(#learnCalls, 0, "known-move gate: no learn attempt")
-
--- Success: CHARIZARD (CL tmhm FLAMETHROWER) -> understood, learnMoveOn with
--- the move name; onDone takes 1000 coins, sets the daily flag, farewell.
-local paySave = stubSave({}, {}, 0)
-paySave.player.coins = 3000
-local payGame = {
-  save = paySave,
-  learnMoveOn = function(game, mon, moveId, onDone)
-    learnCalls[#learnCalls + 1] = { mon = mon, move = moveId, onDone = onDone }
-  end,
-  say = function(game, text) said = text end,
-}
-learnCalls = {}
-said = nil
-vm = fakeVm({})
-run.loader.game = payGame
-co = driveTeach(payGame, "FLAMETHROWER")
-local mon = { species = "CHARIZARD", moves = {} }
-T.eq(co(mon), "end", "successful teach ends the script")
-T.eq(vm.seen[1], "crystal_legacy_changes:understood", "understood text shown")
-T.eq(#learnCalls, 1, "learnMoveOn called once")
-T.eq(learnCalls[1].mon, mon, "learnMoveOn carries the chosen mon")
-T.eq(learnCalls[1].move, "FLAMETHROWER", "learnMoveOn carries the move name")
-T.eq(paySave.player.coins, 3000, "coins unchanged until the learn completes")
--- The learn flow completes later (async): coins taken, daily flag set, farewell.
-learnCalls[1].onDone(true)
-T.eq(paySave.player.coins, 2000, "1000 coins taken on success")
-T.eq(paySave.dailyFlags.goldenrodMoveTutor, true, "daily flag set on success")
-T.eq(said, moveTutorData.texts.farewell, "farewell said after the lesson")
--- Learned=false -> nothing charged, no farewell.
-learnCalls[1].onDone(false)
-T.eq(paySave.player.coins, 2000, "failed learn charges nothing")
-
--- Teach with the daily flag already set -> daily refusal, no picker request.
-clearSaveFlags()
-vm = fakeVm({})
-usedSave = stubSave({}, {}, 0)
-usedSave.dailyFlags = { goldenrodMoveTutor = true }
-withGame(usedSave)
-T.eq(export.moveTutor.teach({ vm = vm }, "FLAMETHROWER"), "end",
-  "teach refuses when today's lesson is used")
-T.eq(vm.seen[1], "crystal_legacy_changes:daily", "teach daily refusal text")
+-- Drive pc_tutor: cancel immediately on category menu
+local co = coroutine.wrap(function()
+  return export.moveTutor.teach({ vm = vm })
+end)
+local req = co()
+T.eq(type(req) == "table" and req.kind, "menu", "pc_tutor yields category menu")
+T.eq(vm.seen[1], "crystal_legacy_changes:greet", "greet shown before category menu")
+-- Selecting cancel (5th item = CANCEL)
+local res = co(5)
+T.eq(res, "end", "declining categories ends the script")
+T.eq(vm.seen[2], "crystal_legacy_changes:no", "decline text shown")
 
 -- ---- Phase 3d2: Team Rocket RadioTower 5F boss scene ----------------------
 -- Gold already ships the full 1F-5F Rocket takeover (fake director giving the
@@ -2548,12 +2460,25 @@ T.eq(rt.flags.beatExecutivem1, 1393, "cascade sets EVENT_BEAT_ROCKET_EXECUTIVEM_
 T.eq(rt.flags.teamRocketDisbanded, 1889, "cascade sets EVENT_TEAM_ROCKET_DISBANDED 1889")
 
 -- Sprites: CL art (16x96 4-shade sheets, copied verbatim from CL_source).
+-- As with the Phase 4b sprites, the registry must carry the mod-local path and
+-- the sheet must exist there: SpriteRenderer loads image verbatim, so a bare
+-- "assets/sprites/..." dies in love.graphics.newImage.
 T.eq(run.loader.content.sprites:get("SPRITE_ARCHER").image,
-  "assets/sprites/archer.png", "Archer sprite registered with CL art")
-T.eq(run.loader.content.sprites:get("SPRITE_GIOVANNI").image,
-  "assets/sprites/giovanni.png", "Giovanni sprite registered")
+  "mods/crystal_legacy_changes/assets/sprites/archer.png",
+  "Archer sprite registered with CL art (mod-local path)")
+T.check(run.loader.fs.getInfo(
+  run.loader.content.sprites:get("SPRITE_ARCHER").image) ~= nil,
+  "Archer sheet exists in the mod")
+local giovanniSprite = run.loader.content.sprites:get("SPRITE_GIOVANNI")
+T.check(giovanniSprite ~= nil, "Giovanni sprite registered")
+T.check(giovanniSprite.image:find("sprites/giovanni%.png") ~= nil,
+  "Giovanni uses canonical sprites/giovanni.png path")
 T.eq(run.loader.content.sprites:get("SPRITE_GIOVANNI_DISGUISE").image,
-  "assets/sprites/giovanni_disguise.png", "Giovanni disguise sprite registered")
+  "mods/crystal_legacy_changes/assets/sprites/giovanni_disguise.png",
+  "Giovanni disguise sprite registered (mod-local path)")
+T.check(run.loader.fs.getInfo(
+  run.loader.content.sprites:get("SPRITE_GIOVANNI_DISGUISE").image) ~= nil,
+  "Giovanni disguise sheet exists in the mod")
 T.eq(run.loader.content.sprites:get("SPRITE_GIOVANNI").palette, "PAL_OW_BROWN",
   "Giovanni uses the brown OW palette (CL PAL_NPC_BROWN)")
 

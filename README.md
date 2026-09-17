@@ -21,12 +21,14 @@ resolved to Crystal registry ids by iterating the content registries at load tim
 - Marts reshelved to the CL lists (`data/marts.lua`), including Berry shops
   and Celadon vitamin shelves.
 - Evolution changes from the CL data sheet (`data/evolutions.lua`).
-- Story and event content: Team Rocket Base and RadioTower, the Goldenrod Move
-  Tutor, Game Corner prizes, fossils + Ruins of Alph revival, the Dratini
-  Master, Mew (Route 24, releases at 249 caught — >248), Celebi/GS Ball, and
-  the Kanto birds (`data/rocket_base.lua`, `data/rocket_tower.lua`,
-  `data/move_tutor.lua`, `data/statics.lua`, `data/fossils.lua`,
-  `data/berry_shop.lua`).
+- Story and event content: Team Rocket Base and RadioTower, an old-man PC Tutor
+  in every one-floor Pokemon Center (Event Moves, Kanto TMs, Egg Moves, and
+  the Battle Tutor), Game Corner prizes, fossils + Ruins of Alph revival, the
+  Dratini Master, Mew (Route 24, releases at 249 caught — >248), Celebi/GS
+  Ball, and the Kanto birds (`data/rocket_base.lua`,
+  `data/rocket_tower.lua`, `data/move_tutor.lua`,
+  `data/kanto_tm_compatibility.lua`, `data/statics.lua`,
+  `data/fossils.lua`, `data/berry_shop.lua`).
 - No ROM-derived files or Crystal ROM patch data.
 - Difficulty & Battle Mechanics (`data/difficulty.lua`):
   - Trainer Held Items: Enemy trainer Pokémon automatically equip their canonical held items in battle.

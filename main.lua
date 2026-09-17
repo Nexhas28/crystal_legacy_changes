@@ -22,9 +22,11 @@ end
 local function indexRecords(registry)
   local ids = {}
   for id, record in registry:each() do
-    ids[normalize(id)] = id
-    if record and record.name then
-      ids[normalize(record.name)] = id
+    if type(record) == "table" then
+      ids[normalize(id)] = id
+      if record.name then
+        ids[normalize(record.name)] = id
+      end
     end
   end
   return ids
@@ -1151,6 +1153,40 @@ local function applyBerryShop(mod, data, counts, martsData)
   mod.exports.berryShop = { data = data }
 end
 
+-- Turn an art path written relative to the mod ("assets/sprites/x.png") into
+-- the path the engine can actually open ("mods/<id>/assets/sprites/x.png").
+--
+-- SpriteRenderer loads a sprite record's `image` verbatim (SpriteRenderer ->
+-- Assets.image -> love.graphics.newImage) and Assets.resolve only rewrites
+-- generated asset paths through an enabled mod's overrides/ directory, so a
+-- sprite that ships its OWN art has to carry a mod-local path -- exactly what
+-- docs/modding.md's companion-sprite example does with "mods/<id>/...".  A
+-- bare "assets/sprites/..." is resolved against the GAME root, not the mod, so
+-- it is not merely wrong: love.graphics.newImage throws there and the world
+-- rebuild dies with it.  This is the same route applyIcons takes for the party
+-- icons; both registration sites below share it.
+--
+-- Idempotent: a path that is already mod-local ("mods/<id>/...", including
+-- this mod's own prefix) or an engine generated asset path the override
+-- pipeline handles is passed through untouched, so a future record may write
+-- the resolved form without getting mods/<id>/mods/<id>/... back.
+local function modImagePath(mod, image)
+  if type(image) ~= "string" or image == "" then return image end
+  if image:find("^mods/") or (image:sub(1, 7) == "assets/" and image:sub(8, 17) == "generated/") then
+    return image
+  end
+  local path = mod and mod.path
+  if type(path) == "string" and path ~= ""
+    and image:sub(1, #path + 1) == path .. "/" then
+    return image
+  end
+  local assets = mod and mod.assets
+  if assets and assets.path then
+    return assets:path(image) or image
+  end
+  return image
+end
+
 -- Phase 3d2: Team Rocket RadioTower 5F (CL maps/RadioTower5F.asm port).
 -- Gold ALREADY ships the full 1F-5F Rocket takeover (fake director giving the
 -- BASEMENT_KEY, EXECUTIVEM_2 on 4F, EXECUTIVEF_1 on 5F, the takeover flag
@@ -1167,10 +1203,11 @@ local function applyRocketTower(mod, data, counts)
 
   -- (a) Register CL's sprites.  Art ships in assets/sprites/*.png (copied
   --     verbatim from CL_source/gfx/sprites -- same 16x96 4-shade sheet
-  --     format as gold's imported overworld sprites).
+  --     format as gold's imported overworld sprites); modImagePath turns each
+  --     mod-relative path into one love.filesystem can open.
   for _, sprite in ipairs(data.sprites or {}) do
     mod.content.sprites:register(sprite.id, {
-      image = sprite.image,
+      image = modImagePath(mod, sprite.image),
       frames = 6,
       walker = true,
       palette = sprite.palette,
@@ -1303,8 +1340,15 @@ local function applyRocketBase(mod, data, counts)
     for _, swap in ipairs(data.spriteSwaps or {}) do
       local map = maps[swap.map]
       if type(map) == "table" and type(map.objects) == "table" then
+        -- Imported datasets can be published without mod-added sprite rows on
+        -- older engines or stale generated caches.  Never leave a map object
+        -- pointing at a missing sprite: NPC construction treats that as fatal.
+        local sprites = target.gen2Sprites
+        local replacementAvailable = type(sprites) == "table"
+          and type(sprites[swap.to]) == "table"
         for _, obj in ipairs(map.objects) do
-          if obj.sprite == swap.sprite and obj.x == swap.x and obj.y == swap.y then
+          if replacementAvailable
+            and obj.sprite == swap.sprite and obj.x == swap.x and obj.y == swap.y then
             obj.sprite = swap.to
             counts.rocketBase.sprites = counts.rocketBase.sprites + 1
           end
@@ -1340,7 +1384,7 @@ local function applySprites(mod, data, counts)
     if type(sprite) == "table" and type(sprite.id) == "string"
       and type(sprite.image) == "string" then
       mod.content.sprites:register(sprite.id, {
-        image = sprite.image,
+        image = modImagePath(mod, sprite.image),
         frames = sprite.frames or 1,
         walker = sprite.walker == true,
         palette = sprite.palette,
@@ -1355,159 +1399,332 @@ local function applySprites(mod, data, counts)
   end
 end
 
--- Phase 3d: Goldenrod City Move Tutor (CL maps/GoldenrodCity.asm:52-165).
--- CL's tutor is a MAPCALLBACK_OBJECTS NPC who appears after 7 Badges with a
--- Coin Case and hides once taught today; gold has none, so the mod appends an
--- always-visible POKEFAN_M at CL's (12,22) and enforces every gate in the talk
--- script.  The 4-option menu is VM rows (verticalmenu -> scriptVar = choice);
--- a daily-gate command stops the script when today's lesson is used up, and a
--- teach command parks the VM coroutine on the party picker, gates the chosen
--- mon against CL's tmhm table (data/tutor_moves.lua -- NEVER species.tmhm,
--- that is the egg-move list), and hands off to Game2:learnMoveOn.  The async
--- onDone takes the 1000 coins, sets the daily flag, and says CL's farewell.
-local function applyMoveTutor(mod, data, counts, tutorMoves)
+-- PC Tutor: an always-available old man in every Pokemon Center.  The
+-- conversation and menus live in one mod command because move lists are much
+-- larger than a vanilla static menu: the command can page them and then hand
+-- the selected move to the engine's native learnMoveOn flow.
+local function applyMoveTutor(mod, data, counts, tutorMoves, kantoCompatibility)
   local prefix = "crystal_legacy_changes:"
-  -- Species sets per move, from CL base_stats tmhm lines (conv_move_tutor.py).
-  local sets = {}
-  for moveName, list in pairs(tutorMoves.tutor_moves) do
-    local set = {}
-    for _, species in ipairs(list) do set[species] = true end
-    sets[moveName] = set
+  local moveIds = indexRecords(mod.content.moves)
+  local speciesIds = indexRecords(mod.content.pokemon)
+  local speciesRecords = {}
+  local speciesCount = 0
+  local moveLabels = {}
+
+  local function resolveMove(moveName)
+    return moveIds[normalize(moveName)]
   end
-  -- CL text rows (plain \n line breaks; the port's TextBox paginates).
+
+  local function resolveSpecies(speciesName)
+    return speciesIds[normalize(speciesName)]
+  end
+
+  for id, record in mod.content.moves:each() do
+    if type(record) == "table" then
+      moveLabels[id] = record.name or tostring(id):gsub("_", " ")
+    end
+  end
+  for id, record in mod.content.pokemon:each() do
+    if type(record) == "table" then
+      speciesRecords[id] = record
+      speciesCount = speciesCount + 1
+    end
+  end
+
   for key, text in pairs(data.texts) do
     mod.content.text:register(prefix .. key, text)
   end
-  -- Daily gate: stop the script ("come back tomorrow") when today's lesson is
-  -- used up; return nil to fall through to the greet otherwise.  The handler's
-  -- return feeds runCmd ("end" halts the list, nil continues at the next row).
-  local function moveTutorDaily(ctx)
-    local vm = ctx and ctx.vm
-    if not vm then return "end" end
-    local save = mod.game and mod.game.save
-    if save and save.dailyFlags and save.dailyFlags[data.dailyKey] then
-      vm:showText(prefix .. "daily")
-      return "end"
+
+  local function addSet(sets, speciesName, moveNames)
+    local speciesId = resolveSpecies(speciesName)
+    if not speciesId then return end
+    local set = sets[speciesId]
+    if not set then
+      set = {}
+      sets[speciesId] = set
     end
-    return nil
+    for _, moveName in ipairs(moveNames or {}) do
+      local moveId = resolveMove(moveName)
+      if moveId then set[moveId] = true end
+    end
   end
-  -- Teach flow: party picker -> species gate -> KnowsMove gate -> learnMoveOn.
-  local function moveTutorTeach(ctx, moveName)
-    local vm = ctx and ctx.vm
-    if not vm then return "end" end
-    local game = mod.game
-    local save = game and game.save
-    if not (game and save) then return "end" end
-    if save.dailyFlags and save.dailyFlags[data.dailyKey] then
-      vm:showText(prefix .. "daily")
-      return "end"
+
+  local sets = { event = {}, kanto = {}, egg = {}, battle = {} }
+  for speciesName, moveNames in pairs(data.eventMoves or {}) do
+    addSet(sets.event, speciesName, moveNames)
+  end
+  for speciesName, moveNames in pairs(kantoCompatibility or {}) do
+    addSet(sets.kanto, speciesName, moveNames)
+  end
+  for moveName, speciesNames in pairs(tutorMoves.tutor_moves or {}) do
+    local moveId = resolveMove(moveName)
+    if moveId then
+      for _, speciesName in ipairs(speciesNames) do
+        local speciesId = resolveSpecies(speciesName)
+        if speciesId then
+          sets.battle[speciesId] = sets.battle[speciesId] or {}
+          sets.battle[speciesId][moveId] = true
+        end
+      end
     end
-    -- Party-picker bridge: {kind="mod_party_picker"} is unknown to Vm:resume's
-    -- chain, so the coroutine parks with self.pending set; the Gen2PartyMenu
-    -- onChoose calls vm:resume(mon) (nil on cancel) to drive it forward.
-    local chosen = coroutine.yield({ kind = "mod_party_picker" })
-    if not chosen then return "end" end
-    local mon = chosen
-    -- CL MoveTutor special contract: refuse species CL cannot teach this move
-    -- and mons that already know it.  Mod-side species table only.
-    local set = sets[moveName]
-    if not (set and set[mon.species]) then
-      vm:showText(prefix .. "incompatible")
-      return "end"
+  end
+
+  -- Event distributions apply to a whole evolution family, matching the
+  -- Crystal Clear tutor behavior while keeping the authored table compact.
+  local children = {}
+  for speciesId, record in pairs(speciesRecords) do
+    for _, evolution in ipairs(record.evolutions or {}) do
+      local child = resolveSpecies(evolution.into)
+      if child then
+        children[speciesId] = children[speciesId] or {}
+        children[speciesId][#children[speciesId] + 1] = child
+      end
     end
+  end
+  for _ = 1, speciesCount do
+    local changed = false
+    for parent, moveSet in pairs(sets.event) do
+      for _, child in ipairs(children[parent] or {}) do
+        sets.event[child] = sets.event[child] or {}
+        for moveId in pairs(moveSet) do
+          if not sets.event[child][moveId] then
+            sets.event[child][moveId] = true
+            changed = true
+          end
+        end
+      end
+    end
+    if not changed then break end
+  end
+
+  local function addMove(list, seen, moveName)
+    local moveId = resolveMove(moveName)
+    if moveId and not seen[moveId] then
+      seen[moveId] = true
+      list[#list + 1] = moveId
+    end
+  end
+
+  local categoryMoves = { event = {}, kanto = {}, egg = {}, battle = {} }
+  local seen = { event = {}, kanto = {}, egg = {}, battle = {} }
+  for _, moveNames in pairs(data.eventMoves or {}) do
+    for _, moveName in ipairs(moveNames) do
+      addMove(categoryMoves.event, seen.event, moveName)
+    end
+  end
+  for _, moveName in ipairs(data.kantoMoves or {}) do
+    addMove(categoryMoves.kanto, seen.kanto, moveName)
+  end
+  for id, record in pairs(speciesRecords) do
+    -- Each species contributes its own egg-move list to the union shown by the
+    -- paged menu.  The species id is only the registry iteration key.
+    for _, moveName in ipairs(record.eggMoves or {}) do
+      addMove(categoryMoves.egg, seen.egg, moveName)
+    end
+  end
+  for moveName in pairs(tutorMoves.tutor_moves or {}) do
+    addMove(categoryMoves.battle, seen.battle, moveName)
+  end
+  local function label(moveId)
+    return moveLabels[moveId] or tostring(moveId):gsub("_", " ")
+  end
+  for _, list in pairs(categoryMoves) do
+    table.sort(list, function(a, b) return label(a) < label(b) end)
+  end
+
+  local function menuHeader(items)
+    return {
+      left = 0,
+      right = 19,
+      top = 0,
+      bottom = 17,
+      cursor = 1,
+      flags = 64,
+      dataFlags = 128,
+      items = items,
+    }
+  end
+
+  local function chooseFromMenu(vm, items)
+    local choice = coroutine.yield({
+      kind = "menu",
+      header = menuHeader(items),
+      style = "vertical",
+    })
+    return tonumber(choice) or 0
+  end
+
+  local function chooseMove(vm, category)
+    local moves = categoryMoves[category] or {}
+    if #moves == 0 then
+      vm:showText(prefix .. "none")
+      return nil
+    end
+    local pageSize = data.pageSize or 5
+    local page = 1
+    local pageCount = math.ceil(#moves / pageSize)
+    while true do
+      local first = (page - 1) * pageSize + 1
+      local last = math.min(#moves, first + pageSize - 1)
+      local items, moveAt = {}, {}
+      for i = first, last do
+        items[#items + 1] = label(moves[i])
+        moveAt[#items] = moves[i]
+      end
+      if page > 1 then
+        items[#items + 1] = "PREVIOUS"
+        moveAt[#items] = false
+      end
+      if page < pageCount then
+        items[#items + 1] = "NEXT"
+        moveAt[#items] = true
+      end
+      items[#items + 1] = "CANCEL"
+      moveAt[#items] = nil
+
+      local choice = chooseFromMenu(vm, items)
+      local selected = moveAt[choice]
+      if selected then return selected end
+      if selected == false then
+        page = math.max(1, page - 1)
+      elseif selected == true then
+        page = math.min(pageCount, page + 1)
+      else
+        -- The cancel row is the final row and returns to the category menu.
+        return nil
+      end
+    end
+  end
+
+  local function hasMove(mon, moveId)
     for _, move in ipairs(mon.moves or {}) do
-      if move.id == moveName then
-        vm:showText(prefix .. "incompatible")
+      if move.id == moveId or normalize(move.id) == normalize(moveId) then
+        return true
+      end
+    end
+    return false
+  end
+
+  local function canLearn(category, mon, moveId)
+    local speciesId = resolveSpecies(mon.species)
+    if not speciesId then return false end
+    if category == "egg" then
+      local record = speciesRecords[speciesId]
+      for _, moveName in ipairs(record and record.eggMoves or {}) do
+        if resolveMove(moveName) == moveId then return true end
+      end
+      return false
+    end
+    return sets[category] and sets[category][speciesId]
+      and sets[category][speciesId][moveId] == true
+  end
+
+  local function pcTutor(ctx)
+    local vm = ctx and ctx.vm
+    local game = mod.game
+    if not (vm and game) then return "end" end
+
+    vm:showText(prefix .. "greet")
+    while true do
+      local categoryItems = {}
+      for _, category in ipairs(data.categories or {}) do
+        categoryItems[#categoryItems + 1] = category.label
+      end
+      categoryItems[#categoryItems + 1] = "CANCEL"
+      local categoryChoice = chooseFromMenu(vm, categoryItems)
+      local category = data.categories and data.categories[categoryChoice]
+      if not category then
+        vm:showText(prefix .. "no")
+        return "end"
+      end
+
+      vm:showText(prefix .. (category.id or "question"))
+      local moveId = chooseMove(vm, category.id)
+      if moveId then
+        vm:showText(prefix .. "understood")
+
+        -- The Gen 2 VM only resumes requests it knows how to service.  A
+        -- custom yield here leaves the NPC script permanently pending, so use
+        -- the engine's supported party-screen callback after this command
+        -- returns.  The callback owns the rest of the conversation because
+        -- the VM script has ended by the time the party screen closes.
+        local world = game.world
+        if not (world and world.selectPartyMon) then return "end" end
+        local chooseParty
+        chooseParty = function()
+          world:selectPartyMon("teach", function(_, chosen)
+            if not chosen then return end
+            if hasMove(chosen, moveId) then
+              game:say(data.texts.already, chooseParty)
+            elseif not canLearn(category.id, chosen, moveId) then
+              game:say(data.texts.incompatible, chooseParty)
+            else
+              game:learnMoveOn(chosen, moveId, function(learned)
+                if learned then game:say(data.texts.farewell) end
+              end)
+            end
+          end)
+        end
+        chooseParty()
         return "end"
       end
     end
-    vm:showText(prefix .. "understood")
-    -- The engine's own TM-teach path (async screens).  onDone fires after the
-    -- script has ended, so the coin take, daily flag and farewell go through
-    -- game:say (push + callback, coroutine-free).
-    game:learnMoveOn(mon, moveName, function(learned)
-      if not learned then return end
-      if save.player then
-        save.player.coins = math.max(0, (save.player.coins or 0) - data.cost)
-      end
-      save.dailyFlags = save.dailyFlags or {}
-      save.dailyFlags[data.dailyKey] = true
-      game:say(data.texts.farewell)
-    end)
-    return "end"
   end
-  mod.commands:register(prefix .. "move_tutor_daily", moveTutorDaily)
-  mod.commands:register(prefix .. "move_tutor_teach", moveTutorTeach)
+  mod.commands:register(prefix .. "pc_tutor", pcTutor)
 
-  -- Inline refusal/teach branch lists; each ends itself (runCmd semantics).
-  local function refuse(textKey)
-    return {
-      { op = "writetext", text = prefix .. textKey },
-      { op = "waitbutton" },
-      { op = "closetext" },
-      { op = "end" },
-    }
+  local function copyObject(placement, index)
+    local object = {}
+    for key, value in pairs(data.npc or {}) do
+      if type(value) == "table" then
+        local copy = {}
+        for nestedKey, nestedValue in pairs(value) do
+          copy[nestedKey] = nestedValue
+        end
+        object[key] = copy
+      else
+        object[key] = value
+      end
+    end
+    object.index = index
+    object.x = placement.x
+    object.y = placement.y
+    return object
   end
-  local function teach(moveName)
-    return {
-      { prefix .. "move_tutor_teach", moveName },
-      { op = "waitbutton" },
-      { op = "closetext" },
-      { op = "end" },
-    }
-  end
-  -- checkcoins/takecoins amounts ride args as a little-endian dw.
-  local coinArgs = { data.cost % 256, math.floor(data.cost / 256) }
 
   mod.events:on("mods.loaded", function(payload)
-    local target = payload.data
-    local scripts = target.gen2Scripts
-    local maps = target.gen2Maps
+    local target = payload and payload.data
+    local scripts = target and target.gen2Scripts
+    local maps = target and target.gen2Maps
     if type(scripts) ~= "table" or type(maps) ~= "table" then return end
-    -- Append the tutor object in place (the berry clerk pattern); eventFlag
-    -- 65535 = always visible, every gate lives in the talk script below.
-    local map = maps[data.map]
-    if type(map) == "table" and type(map.objects) == "table" then
-      table.insert(map.objects, data.tutor)
-      counts.moveTutorObjects = (counts.moveTutorObjects or 0) + 1
+    for _, placement in ipairs(data.maps or {}) do
+      local map = maps[placement.map]
+      if type(map) == "table" and type(map.objects) == "table" then
+        local alreadyAdded = false
+        for _, object in ipairs(map.objects) do
+          if object.scriptKey == data.scriptKey then
+            alreadyAdded = true
+            break
+          end
+        end
+        if not alreadyAdded then
+          table.insert(map.objects, copyObject(placement, #map.objects + 1))
+          counts.moveTutorObjects = (counts.moveTutorObjects or 0) + 1
+        end
+      end
     end
-    -- CL MoveTutorScript re-created as VM rows, with CL's callback gates
-    -- (badges / Coin Case / daily) moved into the talk.  Branch targets are
-    -- inline { ... } lists (runCmd).
     scripts[data.scriptKey] = {
       { op = "faceplayer" },
       { op = "opentext" },
-      -- CL callback gates, moved into the talk (always-visible object).
-      { op = "readvar", var = 0x07 }, -- VAR_BADGES
-      { op = "ifless", value = data.badgeGate, script = refuse("badge") },
-      { args = { data.coinCaseItem }, op = "checkitem" }, -- COIN_CASE
-      { op = "iffalse", script = refuse("coinCase") },
-      { prefix .. "move_tutor_daily" }, -- returns "end" once taught today
-      -- CL MoveTutorScript body (faceplayer/opentext already done).
-      { op = "writetext", text = prefix .. "greet" },
-      { op = "yesorno" },
-      { op = "iffalse", script = refuse("no") },
-      { op = "writetext", text = prefix .. "coinsAsk" },
-      { op = "yesorno" },
-      { op = "iffalse", script = refuse("tooBad") },
-      { args = coinArgs, op = "checkcoins" }, -- >= 1000 coins
-      { op = "ifequal", value = 2, script = refuse("insufficient") }, -- HAVE_LESS
-      { op = "special", id = 78 }, -- DisplayCoinCaseBalance
-      { op = "writetext", text = prefix .. "which" },
-      { op = "loadmenu", menu = data.menu },
-      { op = "verticalmenu" },
-      { op = "closewindow" },
-      { op = "ifequal", value = 1, script = teach("FLAMETHROWER") },
-      { op = "ifequal", value = 2, script = teach("THUNDERBOLT") },
-      { op = "ifequal", value = 3, script = teach("ICE_BEAM") },
-      { op = "end" }, -- CANCEL
+      { prefix .. "pc_tutor" },
+      { op = "closetext" },
+      { op = "end" },
     }
     counts.moveTutorScripts = (counts.moveTutorScripts or 0) + 1
   end)
   mod.exports.moveTutor = {
     data = data,
-    daily = moveTutorDaily,
-    teach = moveTutorTeach,
+    teach = pcTutor,
+    categoryMoves = categoryMoves,
   }
   return counts
 end
@@ -1688,7 +1905,8 @@ return function(mod)
   applyRocketTower(mod, loadSibling(mod, "data/rocket_tower.lua"), counts)
   applyRocketBase(mod, loadSibling(mod, "data/rocket_base.lua"), counts)
   applyMoveTutor(mod, loadSibling(mod, "data/move_tutor.lua"), counts,
-    loadSibling(mod, "data/tutor_moves.lua"))
+    loadSibling(mod, "data/tutor_moves.lua"),
+    loadSibling(mod, "data/kanto_tm_compatibility.lua"))
   applyIcons(mod, loadSibling(mod, "data/icons.lua"), counts)
   local difficulty = loadSibling(mod, "data/difficulty.lua")
   if difficulty and difficulty.applyDifficulty then

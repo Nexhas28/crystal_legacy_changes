@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.3.13] - 2026-09-17
+
+### Added
+
+- Added an old-man PC Tutor to every one-floor Pokémon Center, with paged
+  Event Move, Kanto TM, Egg Move, and Battle Tutor menus.
+
+### Fixed
+
+- Fixed overworld sprite asset path resolution (`assets/sprites/*.png`).
+  Custom overworld sprites (Electrode, Murkrow, Mew, Celebi, Articuno,
+  Zapdos, Archer, Giovanni, etc.) now correctly resolve through the mod's
+  asset loader (`mod.assets:path`), preventing crashes when the game tries
+  to load them from the game root instead of the mod folder.
+
+## [1.3.12] - 2026-09-05
+
+### Fixed
+
+- Prevented Mahogany Rocket Hideout crashes when a custom `SPRITE_ELECTRODE`
+  record is unavailable. The map now retains vanilla `SPRITE_VOLTORB` instead
+  of creating an NPC with a missing sprite record.
+
 ## [1.3.11] - 2026-08-29
 
 ### Fixed

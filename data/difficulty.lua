@@ -426,9 +426,11 @@ local function applyDifficulty(mod, trainersData)
     local speech = payload and payload.speech
     if not speech then return end
     speech.demoSpecies = "WOOPER"
+    local wooper = mod.content and mod.content.pokemon and mod.content.pokemon:get("WOOPER")
+    local wooperPath = wooper and wooper.spriteFront
     local okAssets, Assets = pcall(require, "src.render.Assets")
-    if okAssets and type(Assets) == "table" and type(Assets.image) == "function" then
-      local okImg, img = pcall(Assets.image, "assets/generated/battle/front/wooper.png")
+    if okAssets and type(Assets) == "table" and type(Assets.image) == "function" and wooperPath then
+      local okImg, img = pcall(Assets.image, wooperPath)
       if okImg and img then speech.marillPic = img end
     end
     local okPal, Palettes = pcall(require, "src.world.gen2.Palettes")

@@ -6,6 +6,12 @@
 -- data/rocket_base.lua spriteSwaps reference, resolved by Npc.lua via
 -- gen2Sprites[objDef.sprite].
 --
+-- `image` is written mod-relative ("assets/sprites/*.png") and main.lua's
+-- applySprites resolves it through mod.assets:path before registering: the
+-- engine hands spriteDef.image straight to love.graphics.newImage, so the
+-- value that lands in gen2Sprites has to be the openable mod-local path
+-- ("mods/crystal_legacy_changes/assets/sprites/*.png").
+--
 -- Per-sprite provenance and palette (all CL-faithful):
 --   SPRITE_ARTICUNO  16x96 sheet   gfx/sprites/articuno.png  PAL_OW_BLUE  (CL sprites.asm: PAL_OW_BLUE, 6-frame WALKING_SPRITE)
 --   SPRITE_ZAPDOS    16x96 sheet   gfx/sprites/zapdos.png    PAL_OW_BROWN (CL sprites.asm: PAL_OW_BROWN, 6-frame WALKING_SPRITE)

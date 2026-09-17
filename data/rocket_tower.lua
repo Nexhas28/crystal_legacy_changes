@@ -52,6 +52,10 @@ M.flags = {
 
 -- Sprite registrations.  Art from CL_source/gfx/sprites/*.png (16x96 4-shade
 -- sheets, verified pixel-identical format to gold's generated sprite cache).
+-- `image` stays mod-relative here; main.lua's applyRocketTower resolves it
+-- through mod.assets:path before registering, because the engine loads
+-- spriteDef.image verbatim and a bare "assets/sprites/..." would be looked up
+-- against the GAME root and throw.
 M.sprites = {
   {
     id = "SPRITE_ARCHER",

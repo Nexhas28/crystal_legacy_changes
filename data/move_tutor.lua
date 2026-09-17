@@ -1,78 +1,183 @@
--- Goldenrod City Move Tutor (Phase 3d; CL maps/GoldenrodCity.asm:52-165,
--- texts 486-548, object_event 12,22).
+-- PC Tutor NPC configuration.
 --
--- CL gates the tutor's APPEARANCE via MAPCALLBACK_OBJECTS: he only shows once
--- the player has 7 Badges AND a Coin Case, and he hides again after today's
--- lesson (ENGINE_DAILY_MOVE_TUTOR).  Gold has no tutor at all.  Gold object
--- visibility is flag-driven (flag SET = hidden, flag-less = always visible)
--- and transient appear/disappear does not survive a map reload, so the mod
--- adds an ALWAYS-VISIBLE POKEFAN_M at CL's (12,22) and moves every gate into
--- the talk script (badge gate, Coin Case gate, daily gate).  Same contract,
--- headless-testable.
---
--- The 4-option menu and its branches are plain VM rows (verticalmenu stores
--- the 1-based choice in scriptVar, 0 on cancel); the DAILY gate and the TEACH
--- flow are mod commands.  The teach command parks the VM coroutine on the
--- party picker ({kind="mod_party_picker"} is unknown to Vm:resume so it parks
--- with self.pending set), a Gen2PartyMenu onChoose calls vm:resume(mon), then
--- the command gates the chosen mon against CL's tmhm table (data/tutor_moves
--- .lua -- NEVER patch species.tmhm, that is the egg-move list) plus a
--- KnowsMove check, and hands off to Game2:learnMoveOn (the engine's own TM
--- teach path).  The async onDone takes the 1000 coins from save.player.coins,
--- sets the daily flag, and says CL's farewell.
+-- Crystal Clear makes its tutor move sets available from a PC.  This port
+-- keeps the same idea, but exposes the service through an old man in every
+-- Pokemon Center so it fits Crystal Legacy's world and does not need a PC UI
+-- replacement.
 return {
   generation = 2,
   source = "crystal_legacy_changes/data/move_tutor.lua",
-  map = "GOLDENROD_CITY",
-  scriptKey = "crystal_legacy_changes:goldenrod_move_tutor",
-  cost = 1000,       -- CL charges 1000 (Ask4000CoinsOkayText is a stale name;
-                     -- TSP doc: "now costs 1000 Coins instead")
-  badgeGate = 7,     -- CL callback: readvar VAR_BADGES; ifless 7 -> no tutor
-  coinCaseItem = 54, -- gold items.lua: COIN_CASE = 54 (cache scripts checkitem 54)
-  dailyKey = "goldenrodMoveTutor", -- save.dailyFlags.<key>, wiped each new day
-  menu = {
-    left = 0,
-    right = 15,
-    top = 2,
-    bottom = 11,
-    cursor = 1,
-    flags = 64,      -- MENU_BACKUP_TILES (gold cache coin-vendor header)
-    dataFlags = 128, -- STATICMENU_CURSOR
-    -- ROM strings; the MoveTutor special's own move order is the same.
-    items = { "FLAMETHROWER", "THUNDERBOLT", "ICE BEAM", "CANCEL" },
+  scriptKey = "crystal_legacy_changes:pc_tutor",
+  pageSize = 5,
+  -- These are the 22 one-floor Pokemon Centers in the Crystal map set.  The
+  -- small centers share (9,3), a clear tile beside the main walkway; Indigo
+  -- Plateau is larger and uses its matching open spot at (13,7).
+  maps = {
+    { map = "AZALEA_POKECENTER_1F", x = 9, y = 3 },
+    { map = "BLACKTHORN_POKECENTER_1F", x = 9, y = 3 },
+    { map = "CELADON_POKECENTER_1F", x = 9, y = 3 },
+    { map = "CERULEAN_POKECENTER_1F", x = 9, y = 3 },
+    { map = "CHERRYGROVE_POKECENTER_1F", x = 9, y = 3 },
+    { map = "CIANWOOD_POKECENTER_1F", x = 9, y = 3 },
+    { map = "CINNABAR_POKECENTER_1F", x = 9, y = 3 },
+    { map = "ECRUTEAK_POKECENTER_1F", x = 9, y = 3 },
+    { map = "FUCHSIA_POKECENTER_1F", x = 9, y = 3 },
+    { map = "GOLDENROD_POKECENTER_1F", x = 9, y = 3 },
+    { map = "INDIGO_PLATEAU_POKECENTER_1F", x = 13, y = 7 },
+    { map = "LAVENDER_POKECENTER_1F", x = 9, y = 3 },
+    { map = "MAHOGANY_POKECENTER_1F", x = 9, y = 3 },
+    { map = "OLIVINE_POKECENTER_1F", x = 9, y = 3 },
+    { map = "PEWTER_POKECENTER_1F", x = 9, y = 3 },
+    { map = "ROUTE_10_POKECENTER_1F", x = 9, y = 3 },
+    { map = "ROUTE_32_POKECENTER_1F", x = 9, y = 3 },
+    { map = "SAFFRON_POKECENTER_1F", x = 9, y = 3 },
+    { map = "SILVER_CAVE_POKECENTER_1F", x = 9, y = 3 },
+    { map = "VERMILION_POKECENTER_1F", x = 9, y = 3 },
+    { map = "VIOLET_POKECENTER_1F", x = 9, y = 3 },
+    { map = "VIRIDIAN_POKECENTER_1F", x = 9, y = 3 },
   },
-  tutor = {
-    eventFlag = 65535, -- 0xFFFF: no flag gate (always visible)
+  npc = {
+    eventFlag = 65535,
     hours = { -1, -1 },
-    index = 15,        -- gold GoldenrodCity has 14 objects; the tutor is #15
-    movement = 3,      -- SPRITEMOVEDATA_SPINRANDOM_SLOW (CL)
-    palette = 0,       -- default POKEFAN_M colors (~= CL's PAL_NPC_RED)
+    movement = 6, -- SPRITEMOVEDATA_STANDING_DOWN
+    palette = 9,
     radius = { x = 0, y = 0 },
-    script = 0,        -- no ROM pointer; the port resolves via scriptKey
-    scriptKey = "crystal_legacy_changes:goldenrod_move_tutor",
+    script = 0,
+    scriptKey = "crystal_legacy_changes:pc_tutor",
     sight = 0,
-    sprite = "SPRITE_POKEFAN_M",
-    spriteId = 45,     -- gold cache: GoldenrodCity POKEFAN_M is spriteId 45
-    type = 0,          -- OBJECTTYPE_SCRIPT
-    x = 12,
-    y = 22,            -- CL object_event 12, 22
+    sprite = "SPRITE_GRAMPS",
+    spriteId = 47,
+    type = 0,
+  },
+  categories = {
+    { id = "event", label = "EVENT MOVES" },
+    { id = "kanto", label = "KANTO TMs" },
+    { id = "egg", label = "EGG MOVES" },
+    { id = "battle", label = "BATTLE TUTOR" },
+  },
+  -- The Kanto list is kept in the same order as the original Red/Blue/Yellow
+  -- TM numbers.  Compatibility is in data/kanto_tm_compatibility.lua.
+  kantoMoves = {
+    "MEGA_PUNCH", "RAZOR_WIND", "SWORDS_DANCE", "WHIRLWIND", "MEGA_KICK",
+    "TOXIC", "HORN_DRILL", "BODY_SLAM", "TAKE_DOWN", "DOUBLE_EDGE",
+    "BUBBLEBEAM", "WATER_GUN", "ICE_BEAM", "BLIZZARD", "HYPER_BEAM",
+    "PAY_DAY", "SUBMISSION", "COUNTER", "SEISMIC_TOSS", "RAGE",
+    "MEGA_DRAIN", "SOLARBEAM", "DRAGON_RAGE", "THUNDERBOLT", "THUNDER",
+    "EARTHQUAKE", "FISSURE", "DIG", "PSYCHIC", "TELEPORT", "MIMIC",
+    "DOUBLE_TEAM", "REFLECT", "BIDE", "METRONOME", "SELFDESTRUCT",
+    "EGG_BOMB", "FIRE_BLAST", "SWIFT", "SKULL_BASH", "SOFTBOILED",
+    "DREAM_EATER", "SKY_ATTACK", "REST", "THUNDER_WAVE", "PSYWAVE",
+    "EXPLOSION", "ROCK_SLIDE", "TRI_ATTACK", "SUBSTITUTE",
+  },
+  -- Event-only move distributions documented for Crystal Clear, including
+  -- event moves that were also made teachable as TMs there.
+  eventMoves = {
+    AERODACTYL = { "ROCK_THROW" },
+    ABRA = { "FORESIGHT" },
+    BELLSPROUT = { "SWEET_KISS", "LOVELY_KISS" },
+    BULBASAUR = { "ANCIENTPOWER" },
+    CHARMANDER = { "CRUNCH" },
+    CHIKORITA = { "PETAL_DANCE" },
+    CHINCHOU = { "LIGHT_SCREEN" },
+    CLEFFA = { "PETAL_DANCE", "SCARY_FACE" },
+    CUBONE = { "FURY_ATTACK" },
+    CYNDAQUIL = { "DOUBLE_EDGE" },
+    DELIBIRD = { "SPIKES", "PAY_DAY" },
+    DODUO = { "LOW_KICK" },
+    DRATINI = { "HYDRO_PUMP" },
+    DROWZEE = { "AMNESIA" },
+    DUNSPARCE = { "HORN_DRILL", "FURY_ATTACK" },
+    EEVEE = { "GROWTH" },
+    ELEKID = { "PURSUIT", "DIZZY_PUNCH" },
+    FARFETCH_D = { "FURY_CUTTER", "BATON_PASS" },
+    PHANPY = { "ABSORB", "ENCORE" },
+    GEODUDE = { "RAPID_SPIN" },
+    GLIGAR = { "EARTHQUAKE" },
+    GOLDEEN = { "SWORDS_DANCE" },
+    HOOTHOOT = { "NIGHT_SHADE" },
+    HERACROSS = { "SEISMIC_TOSS" },
+    HOPPIP = { "AGILITY" },
+    HORSEA = { "HAZE" },
+    IGGLYBUFF = { "PETAL_DANCE", "MIMIC", "SCARY_FACE" },
+    KABUTO = { "ROCK_THROW" },
+    KANGASKHAN = { "FAINT_ATTACK" },
+    KRABBY = { "METAL_CLAW" },
+    LAPRAS = { "BITE", "FUTURE_SIGHT" },
+    LARVITAR = { "RAGE" },
+    LEDYBA = { "BARRIER" },
+    LICKITUNG = { "DOUBLESLAP" },
+    MACHOP = { "FALSE_SWIPE", "THRASH" },
+    MAGBY = { "FAINT_ATTACK" },
+    MAGIKARP = { "BUBBLE", "REVERSAL", "DRAGON_RAGE" },
+    MAGNEMITE = { "AGILITY" },
+    MANTINE = { "GUST" },
+    MARILL = { "SCARY_FACE", "DIZZY_PUNCH", "HYDRO_PUMP" },
+    MILTANK = { "LOW_KICK" },
+    MISDREAVUS = { "HYPNOSIS" },
+    MR__MIME = { "MIND_READER" },
+    MURKROW = { "BEAT_UP" },
+    NATU = { "SAFEGUARD" },
+    NIDORINA = { "LOVELY_KISS", "SWEET_KISS", "MOONLIGHT" },
+    NIDORINO = { "LOVELY_KISS", "SWEET_KISS", "MORNING_SUN" },
+    ODDISH = { "LEECH_SEED" },
+    OMANYTE = { "ROCK_THROW" },
+    ONIX = { "SHARPEN" },
+    PARAS = { "SYNTHESIS" },
+    PINSIR = { "ROCK_THROW" },
+    PICHU = { "PETAL_DANCE", "DIZZY_PUNCH", "SCARY_FACE", "SING" },
+    PINECO = { "SUBSTITUTE" },
+    POLIWAG = { "SWEET_KISS", "LOVELY_KISS", "GROWTH" },
+    PONYTA = { "LOW_KICK", "PAY_DAY" },
+    PORYGON = { "BARRIER" },
+    PSYDUCK = { "AMNESIA", "TRI_ATTACK", "PETAL_DANCE" },
+    QWILFISH = { "DOUBLE_EDGE" },
+    REMORAID = { "AMNESIA", "MIST" },
+    SWINUB = { "WHIRLWIND" },
+    SCYTHER = { "SONICBOOM" },
+    SEEL = { "FLAIL" },
+    SENTRET = { "DIZZY_PUNCH" },
+    SMOOCHUM = { "METRONOME", "PETAL_DANCE" },
+    SNEASEL = { "MOONLIGHT" },
+    SNORLAX = { "SWEET_KISS", "LOVELY_KISS", "SPLASH" },
+    SNUBBULL = { "LOVELY_KISS" },
+    SPEAROW = { "SONICBOOM", "PAY_DAY" },
+    SPINARAK = { "GROWTH" },
+    STANTLER = { "SAFEGUARD" },
+    STARYU = { "TWISTER" },
+    SUDOWOODO = { "SUBSTITUTE" },
+    SUNKERN = { "SPLASH" },
+    TANGELA = { "SYNTHESIS" },
+    TAUROS = { "QUICK_ATTACK" },
+    TENTACOOL = { "CONFUSE_RAY" },
+    TOTODILE = { "SUBMISSION" },
+    TYROGUE = { "RAGE" },
+    VOLTORB = { "AGILITY" },
+    WOBBUFFET = { "MIMIC" },
+    WOOPER = { "SCARY_FACE", "BELLY_DRUM" },
+    YANMA = { "STEEL_WING", "SWEET_KISS" },
+    ZUBAT = { "FLAIL" },
+    -- Event moves that were also directly teachable as TMs.
+    CHANSEY = { "SWEET_SCENT" },
+    CLEFAIRY = { "SWIFT" },
+    EXEGGCUTE = { "SWEET_SCENT" },
+    SKARMORY = { "FURY_CUTTER" },
+    SQUIRTLE = { "ZAP_CANNON" },
+    TEDDIURSA = { "SWEET_SCENT" },
+    PIKACHU = { "SURF", "FLY" },
   },
   texts = {
-    -- CL text rows, adapted to the port's textbox (plain \n line breaks; the
-    -- TextBox paginates at 4 lines).  #MON -> Pokemon.
-    greet = "I can teach your\nPokémon amazing\nmoves if you'd\nlike.\nShould I teach a\nnew move?",
-    no = "Aww… But they're\namazing…",
-    coinsAsk = "It will cost you\n1000 coins. Okay?",
-    tooBad = "Hm, too bad. I'll\nhave to get some\ncash from home…",
-    insufficient = "…You don't have\nenough coins here…",
-    which = "Wahahah! You won't\nregret it!\nWhich move should\nI teach?",
-    understood = "If you understand\nwhat's so amazing\nabout this move,\nyou've made it as\na trainer.",
-    farewell = "Wahahah!\nFarewell, kid!",
-    incompatible = "B-but…",
-    -- ORIGINAL gate lines: CL hides the tutor entirely in these states, so it
-    -- has no texts for them; the always-visible script needs refusal text.
-    badge = "I only teach moves\nto trainers who've\nbeaten seven Gyms.\nCome back when\nyou've earned more\nBadges.",
-    coinCase = "You'll need a Coin\nCase to pay me.\nThere's one at the\nGoldenrod Game\nCorner.",
-    daily = "I've done all I\ncan for today.\nCome back tomorrow!",
+    greet = "Back in my day,\nPokémon knew all\nsorts of unusual\nmoves! I can teach\nold moves to your\nPokémon.",
+    question = "What kind of\nmove are you\nlooking for?",
+    event = "Some of these\nmoves were given\nout at special\nevents long ago.",
+    kanto = "These moves were\nTMs back in Kanto.\nA bit old-fashioned,\nbut still useful!",
+    egg = "Egg moves take\npatience to breed.\nI can pass those\nold techniques on.",
+    battle = "These battle moves\ncan give a Pokémon\na surprising edge.",
+    no = "Maybe another\ntime, youngster.",
+    which = "Which move should\nI teach?",
+    none = "I don't have any\nmoves in that set\nfor this Pokémon.",
+    incompatible = "That Pokémon\ncan't learn this\nmove.",
+    already = "That Pokémon\nalready knows this\nmove.",
+    understood = "Good choice!\nNow, which Pokémon\nshould learn it?",
+    farewell = "There! A move from\nthe old days, ready\nfor a new adventure!",
   },
 }
